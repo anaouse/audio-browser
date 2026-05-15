@@ -114,6 +114,8 @@ class AudioBrowserApp(QMainWindow):
         # 如果你希望单击就能播放，可以把 itemActivated 替换为 itemClicked
         self.tree.itemClicked.connect(self.on_tree_node_selected)
 
+        self._current_playback: Playback | None = None
+
     def populate_tree(self):
         audio_dir = Path("./audio")
 
@@ -134,11 +136,12 @@ class AudioBrowserApp(QMainWindow):
             root_item.setExpanded(True)
             return
 
-        # 1. 预加载根目录下的 .wav 文件
-        for file_path in sorted(audio_dir.glob("*.wav")):
+        # 1. 预加载根目录下的音频文件（wav + mp3）
+        root_files = sorted(list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3")))
+        for file_path in root_files:
             self.add_wav_leaf(root_item, file_path)
 
-        # 2. 加载子目录及其 .wav 文件
+        # 2. 加载子目录及其音频文件（wav + mp3）
         for sub_dir in sorted(audio_dir.iterdir()):
             if sub_dir.is_dir():
                 sub_node = QTreeWidgetItem(root_item, [f"{sub_dir.name}/"])
@@ -147,7 +150,8 @@ class AudioBrowserApp(QMainWindow):
                 sub_node.setFont(0, font)
                 sub_node.setForeground(0, QColor("#268BD2"))  # [bold blue] 效果
 
-                for wav_file in sorted(sub_dir.glob("*.wav")):
+                sub_files = sorted(list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3")))
+                for wav_file in sub_files:
                     self.add_wav_leaf(sub_node, wav_file)
 
         # 展开根节点 (相当于取消 collapse)
@@ -168,10 +172,14 @@ class AudioBrowserApp(QMainWindow):
 
     def on_tree_node_selected(self, item: QTreeWidgetItem, column: int):
         """Play the WAV file when a leaf node is activated (Double-click/Enter)."""
-        # 从 UserRole 获取保存的 Playback 对象
         node_data = item.data(0, Qt.ItemDataRole.UserRole)
 
         if isinstance(node_data, Playback):
+            # 先停掉正在播放的
+            if self._current_playback is not None:
+                self._current_playback.stop()
+            # 播放新的
+            self._current_playback = node_data
             node_data.play()
 
 
