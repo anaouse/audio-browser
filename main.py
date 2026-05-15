@@ -1,65 +1,113 @@
+import sys
 from pathlib import Path
 
 from just_playback import Playback
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.widgets import Footer, Header, Tree
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
-class AudioBrowserApp(App):
-    """A Textual TUI app to browse and play wav files."""
+class AudioBrowserApp(QMainWindow):
+    """A PyQt6 GUI app to browse and play wav files."""
 
-    TITLE = "Audio File Browser"
+    def __init__(self):
+        super().__init__()
 
-    BINDINGS = [Binding("q", "quit", "Quit")]
+        # 相当于 Textual 中的 TITLE
+        self.setWindowTitle("Audio File Browser")
+        self.resize(600, 500)
 
-    def compose(self) -> ComposeResult:
-        yield Header()
-        tree = Tree("[bold yellow]audio/[/]")
-        yield tree
-        yield Footer()
+        # 设置中心窗口和布局
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
 
-    def on_mount(self) -> None:
-        """Called automatically when the app starts."""
-        tree = self.query_one(Tree)
-        tree.root.collapse()
+        # 相当于 Textual 的 Tree
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)  # 隐藏表头
+        layout.addWidget(self.tree)
 
+        # 初始化树形数据 (相当于 Textual 的 on_mount)
+        self.populate_tree()
+
+        # 信号绑定：itemActivated 相当于 NodeSelected
+        # 桌面端通常习惯“双击”或按“回车”来执行动作（而不是单击）
+        # 如果你希望单击就能播放，可以把 itemActivated 替换为 itemClicked
+        self.tree.itemClicked.connect(self.on_tree_node_selected)
+
+    def populate_tree(self):
         audio_dir = Path("./audio")
 
+        # 创建根节点: audio/
+        root_item = QTreeWidgetItem(self.tree, ["audio/"])
+        font = root_item.font(0)
+        font.setBold(True)
+        root_item.setFont(0, font)
+        root_item.setForeground(0, QColor("#D79921"))  # [bold yellow] 效果
+
+        # 检查目录是否存在
         if not audio_dir.exists() or not audio_dir.is_dir():
-            tree.root.add_leaf("[dim italic]No ./audio directory found[/]")
+            error_item = QTreeWidgetItem(root_item, ["No ./audio directory found"])
+            font = error_item.font(0)
+            font.setItalic(True)
+            error_item.setFont(0, font)
+            error_item.setForeground(0, QColor("gray"))  # [dim italic] 效果
+            root_item.setExpanded(True)
             return
 
-        # Preload all .wav files as Playback objects, stored on each leaf's data
-        # Root-level .wav files
+        # 1. 预加载根目录下的 .wav 文件
         for file_path in sorted(audio_dir.glob("*.wav")):
-            pb = Playback(str(file_path))
-            leaf = tree.root.add_leaf(
-                f"[#e4e4e4]♪ {file_path.name}[/]",
-                data=pb,
-            )
+            self.add_wav_leaf(root_item, file_path)
 
-        # Subdirectories and their .wav files
+        # 2. 加载子目录及其 .wav 文件
         for sub_dir in sorted(audio_dir.iterdir()):
             if sub_dir.is_dir():
-                sub_node = tree.root.add(
-                    f"[bold blue]{sub_dir.name}/[/]",
-                    expand=False,
-                )
-                for wav_file in sorted(sub_dir.glob("*.wav")):
-                    pb = Playback(str(wav_file))
-                    leaf = sub_node.add_leaf(
-                        f"[#e4e4e4]♪ {wav_file.name}[/]",
-                        data=pb,
-                    )
+                sub_node = QTreeWidgetItem(root_item, [f"{sub_dir.name}/"])
+                font = sub_node.font(0)
+                font.setBold(True)
+                sub_node.setFont(0, font)
+                sub_node.setForeground(0, QColor("#268BD2"))  # [bold blue] 效果
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
-        """Play the WAV file when a leaf node is clicked."""
-        node_data = event.node.data
+                for wav_file in sorted(sub_dir.glob("*.wav")):
+                    self.add_wav_leaf(sub_node, wav_file)
+
+        # 展开根节点 (相当于取消 collapse)
+        root_item.setExpanded(True)
+
+    def add_wav_leaf(self, parent_node: QTreeWidgetItem, file_path: Path):
+        """辅助方法：将 Playback 对象绑定到叶子节点并显示"""
+        pb = Playback(str(file_path))
+        leaf = QTreeWidgetItem(parent_node, [f"♪ {file_path.name}"])
+
+        # 注意：桌面 GUI 有浅色/深色主题，写死 #e4e4e4(近白色) 会导致浅色模式下看不清文字。
+        # 因此这里省略了颜色指定，让它跟随系统默认文本颜色即可。
+
+        # 相当于 Textual 的 data=pb
+        # 将 Python 对象保存在 UserRole 里面
+        leaf.setData(0, Qt.ItemDataRole.UserRole, pb)
+
+    def on_tree_node_selected(self, item: QTreeWidgetItem, column: int):
+        """Play the WAV file when a leaf node is activated (Double-click/Enter)."""
+        # 从 UserRole 获取保存的 Playback 对象
+        node_data = item.data(0, Qt.ItemDataRole.UserRole)
+
         if isinstance(node_data, Playback):
             node_data.play()
 
 
 if __name__ == "__main__":
-    app = AudioBrowserApp()
-    app.run()
+    # PyQt 应用必须有 QApplication 实例
+    app = QApplication(sys.argv)
+
+    window = AudioBrowserApp()
+    window.show()
+
+    # 退出绑定
+    sys.exit(app.exec())
