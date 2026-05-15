@@ -1,8 +1,9 @@
 from pathlib import Path
-from textual.app import App, ComposeResult
-from textual.widgets import Tree, Header, Footer
-from textual.binding import Binding
+
 from just_playback import Playback
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.widgets import Footer, Header, Tree
 
 
 class AudioBrowserApp(App):
@@ -10,9 +11,7 @@ class AudioBrowserApp(App):
 
     TITLE = "Audio File Browser"
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit")
-    ]
+    BINDINGS = [Binding("q", "quit", "Quit")]
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -59,6 +58,7 @@ class AudioBrowserApp(App):
         node_data = event.node.data
         if isinstance(node_data, Playback):
             node_data.play()
+
 
 if __name__ == "__main__":
     app = AudioBrowserApp()
