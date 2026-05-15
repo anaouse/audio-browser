@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 
 from just_playback import Playback
-from PyQt6.QtCore import Qt, QTimer, QPoint, QMimeData, QUrl
-from PyQt6.QtGui import QColor, QFont, QDrag
+from PyQt6.QtCore import QMimeData, QPoint, Qt, QTimer, QUrl
+from PyQt6.QtGui import QColor, QDrag, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -14,13 +14,14 @@ from PyQt6.QtWidgets import (
 )
 
 
-# ── 长按拖拽 TreeWidget ──────────────────────────────────────────────────────
+# 长按拖拽 TreeWidget
 class DraggableTreeWidget(QTreeWidget):
     """
     重写鼠标事件：
     - 长按(500ms)或拖动距离超过阈值 → 启动文件拖放
     - 短按/点击 → 保留原有的 itemClicked 信号（播放音频）
     """
+
     LONG_PRESS_MS = 500
     DRAG_THRESHOLD = 8
 
@@ -92,7 +93,6 @@ class AudioBrowserApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # 相当于 Textual 中的 TITLE
         self.setWindowTitle("Audio File Browser")
         self.resize(600, 500)
 
@@ -101,17 +101,12 @@ class AudioBrowserApp(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # 相当于 Textual 的 Tree
         self.tree = DraggableTreeWidget()
         self.tree.setHeaderHidden(True)  # 隐藏表头
         layout.addWidget(self.tree)
 
-        # 初始化树形数据 (相当于 Textual 的 on_mount)
         self.populate_tree()
 
-        # 信号绑定：itemActivated 相当于 NodeSelected
-        # 桌面端通常习惯“双击”或按“回车”来执行动作（而不是单击）
-        # 如果你希望单击就能播放，可以把 itemActivated 替换为 itemClicked
         self.tree.itemClicked.connect(self.on_tree_node_selected)
 
         self._current_playback: Playback | None = None
@@ -137,7 +132,9 @@ class AudioBrowserApp(QMainWindow):
             return
 
         # 1. 预加载根目录下的音频文件（wav + mp3）
-        root_files = sorted(list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3")))
+        root_files = sorted(
+            list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3"))
+        )
         for file_path in root_files:
             self.add_wav_leaf(root_item, file_path)
 
@@ -150,7 +147,9 @@ class AudioBrowserApp(QMainWindow):
                 sub_node.setFont(0, font)
                 sub_node.setForeground(0, QColor("#268BD2"))  # [bold blue] 效果
 
-                sub_files = sorted(list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3")))
+                sub_files = sorted(
+                    list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3"))
+                )
                 for wav_file in sub_files:
                     self.add_wav_leaf(sub_node, wav_file)
 
@@ -162,11 +161,6 @@ class AudioBrowserApp(QMainWindow):
         pb = Playback(str(file_path))
         leaf = QTreeWidgetItem(parent_node, [f"♪ {file_path.name}"])
 
-        # 注意：桌面 GUI 有浅色/深色主题，写死 #e4e4e4(近白色) 会导致浅色模式下看不清文字。
-        # 因此这里省略了颜色指定，让它跟随系统默认文本颜色即可。
-
-        # 相当于 Textual 的 data=pb
-        # 将 Python 对象保存在 UserRole，文件路径保存在 UserRole+1（供拖拽使用）
         leaf.setData(0, Qt.ItemDataRole.UserRole, pb)
         leaf.setData(0, Qt.ItemDataRole.UserRole + 1, str(file_path))
 
