@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 
 from just_playback import Playback
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import Qt, QTimer, QPoint, QMimeData, QUrl
+from PyQt6.QtGui import QColor, QFont, QDrag
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -12,6 +12,78 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+# ── 长按拖拽 TreeWidget ──────────────────────────────────────────────────────
+class DraggableTreeWidget(QTreeWidget):
+    """
+    重写鼠标事件：
+    - 长按(500ms)或拖动距离超过阈值 → 启动文件拖放
+    - 短按/点击 → 保留原有的 itemClicked 信号（播放音频）
+    """
+    LONG_PRESS_MS = 500
+    DRAG_THRESHOLD = 8
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._press_pos: QPoint | None = None
+        self._press_item: QTreeWidgetItem | None = None
+        self._long_press_timer = QTimer(self)
+        self._long_press_timer.setSingleShot(True)
+        self._long_press_timer.timeout.connect(self._on_long_press)
+        self._drag_started = False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.pos()
+            self._drag_started = False
+            item = self.itemAt(event.pos())
+            if item and item.data(0, Qt.ItemDataRole.UserRole) is not None:
+                self._press_item = item
+                self._long_press_timer.start(self.LONG_PRESS_MS)
+            else:
+                self._press_item = None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            self._press_item is not None
+            and self._press_pos is not None
+            and not self._drag_started
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            dist = (event.pos() - self._press_pos).manhattanLength()
+            if dist >= self.DRAG_THRESHOLD:
+                self._long_press_timer.stop()
+                self._start_drag(self._press_item)
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._long_press_timer.stop()
+        self._press_item = None
+        self._press_pos = None
+        super().mouseReleaseEvent(event)
+
+    def _on_long_press(self):
+        """长按计时器触发 → 启动拖拽"""
+        if self._press_item is not None and not self._drag_started:
+            self._start_drag(self._press_item)
+
+    def _start_drag(self, item: QTreeWidgetItem):
+        file_path: str = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if not file_path:
+            return
+        self._drag_started = True
+
+        mime = QMimeData()
+        file_url = QUrl.fromLocalFile(str(Path(file_path).resolve()))
+        mime.setUrls([file_url])
+
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+
+        drag.exec(Qt.DropAction.CopyAction)
 
 
 class AudioBrowserApp(QMainWindow):
@@ -30,7 +102,7 @@ class AudioBrowserApp(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         # 相当于 Textual 的 Tree
-        self.tree = QTreeWidget()
+        self.tree = DraggableTreeWidget()
         self.tree.setHeaderHidden(True)  # 隐藏表头
         layout.addWidget(self.tree)
 
@@ -90,8 +162,9 @@ class AudioBrowserApp(QMainWindow):
         # 因此这里省略了颜色指定，让它跟随系统默认文本颜色即可。
 
         # 相当于 Textual 的 data=pb
-        # 将 Python 对象保存在 UserRole 里面
+        # 将 Python 对象保存在 UserRole，文件路径保存在 UserRole+1（供拖拽使用）
         leaf.setData(0, Qt.ItemDataRole.UserRole, pb)
+        leaf.setData(0, Qt.ItemDataRole.UserRole + 1, str(file_path))
 
     def on_tree_node_selected(self, item: QTreeWidgetItem, column: int):
         """Play the WAV file when a leaf node is activated (Double-click/Enter)."""
