@@ -2,6 +2,7 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
+import vlc
 from just_playback import Playback
 from PyQt6.QtCore import (
     QMimeData,
@@ -53,6 +54,24 @@ from styles import (
     tree_stylesheet,
     window_stylesheet,
 )
+
+
+def _is_vlc_format(path: str) -> bool:
+    """Return True if the file should use VLC (opus/m4a) instead of just_playback."""
+    return Path(path).suffix.lower() in (".opus", ".m4a")
+
+
+class VlcPlayback:
+    """Thin wrapper around vlc.MediaPlayer matching just_playback's interface."""
+
+    def __init__(self, path: str):
+        self._player = vlc.MediaPlayer(path)
+
+    def play(self):
+        self._player.play()
+
+    def stop(self):
+        self._player.stop()
 
 
 class Header(QWidget):
@@ -107,15 +126,15 @@ class Header(QWidget):
 class PlaybackLRUCache:
     def __init__(self, max_size: int = 20):
         self._max_size = max_size
-        self._cache: OrderedDict[str, Playback] = OrderedDict()
+        self._cache: OrderedDict[str, Playback | VlcPlayback] = OrderedDict()
 
-    def get(self, path: str) -> Playback | None:
+    def get(self, path: str) -> Playback | VlcPlayback | None:
         if path in self._cache:
             self._cache.move_to_end(path)
             return self._cache[path]
         return None
 
-    def put(self, path: str, pb: Playback) -> None:
+    def put(self, path: str, pb: Playback | VlcPlayback) -> None:
         if path in self._cache:
             self._cache.move_to_end(path)
             return
@@ -142,7 +161,10 @@ class PlaybackLoader(QObject):
 
     def run(self):
         try:
-            pb = Playback(self._path)
+            if _is_vlc_format(self._path):
+                pb = VlcPlayback(self._path)
+            else:
+                pb = Playback(self._path)
         except Exception:
             pb = None
         self.finished.emit(self._path, pb)
@@ -390,7 +412,7 @@ class AudioBrowserApp(QMainWindow):
         self._populate_tree()
         self.tree.itemClicked.connect(self._on_item_clicked)
         self.tree.add_folder_requested.connect(self._on_add_folder)
-        self._current_playback: Playback | None = None
+        self._current_playback: Playback | VlcPlayback | None = None
 
     # Tree population
     def _populate_tree(self):
@@ -494,7 +516,10 @@ class AudioBrowserApp(QMainWindow):
         pb = self._cache.get(path)
         if pb is None:
             try:
-                pb = Playback(path)
+                if _is_vlc_format(path):
+                    pb = VlcPlayback(path)
+                else:
+                    pb = Playback(path)
                 self._cache.put(path, pb)
             except Exception:
                 return
