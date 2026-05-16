@@ -17,10 +17,12 @@ from PyQt6.QtGui import (
     QBrush,
     QColor,
     QDrag,
+    QIcon,
     QLinearGradient,
     QPainter,
     QPainterPath,
     QPalette,
+    QPixmap,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,7 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-# ─── Palette ────────────────────────────────────────────────────────────────
+# Palette
 MOSS_DARK = "#1C2416"  # deepest forest floor
 MOSS_MID = "#2D3B22"  # window / panel background
 MOSS_LEAF = "#3E5430"  # header / sidebar
@@ -47,8 +49,110 @@ BARK = "#6B5B3E"  # subtle separator
 DEWDROP = "#A8C8A0"  # currently playing tint
 
 
-# ─── Leaf / vine decoration widget ──────────────────────────────────────────
-class BotanicalHeader(QWidget):
+# Procedural leaf icon
+def make_leaf_icon(size: int = 64) -> QIcon:
+    """
+    Draw a botanical leaf icon entirely in QPainter — no external assets needed.
+    The leaf is a filled bezier shape with a centre vein and two side veins,
+    sitting on a rounded dark-green background.
+    """
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    s = size
+    # Rounded background pill
+    bg_path = QPainterPath()
+    bg_path.addRoundedRect(0, 0, s, s, s * 0.22, s * 0.22)
+    p.fillPath(bg_path, QColor(MOSS_LEAF))
+
+    # Leaf body
+    # Coordinate system: origin top-left, leaf pointing upward-right
+    cx = s * 0.50  # horizontal centre
+    tip_y = s * 0.12  # leaf tip (top)
+    base_y = s * 0.85  # leaf base (bottom)
+    mid_y = (tip_y + base_y) / 2
+
+    leaf = QPainterPath()
+    leaf.moveTo(cx, tip_y)
+    # right curve
+    leaf.cubicTo(
+        cx + s * 0.40,
+        tip_y + s * 0.15,
+        cx + s * 0.40,
+        base_y - s * 0.15,
+        cx,
+        base_y,
+    )
+    # left curve
+    leaf.cubicTo(
+        cx - s * 0.40,
+        base_y - s * 0.15,
+        cx - s * 0.40,
+        tip_y + s * 0.15,
+        cx,
+        tip_y,
+    )
+
+    p.fillPath(leaf, QColor(FERN_GREEN))
+
+    # Subtle inner highlight (lighter left lobe)
+    highlight = QPainterPath()
+    highlight.moveTo(cx, tip_y)
+    highlight.cubicTo(
+        cx - s * 0.40,
+        tip_y + s * 0.15,
+        cx - s * 0.30,
+        mid_y - s * 0.05,
+        cx,
+        mid_y,
+    )
+    highlight.cubicTo(
+        cx - s * 0.10,
+        mid_y - s * 0.10,
+        cx - s * 0.10,
+        tip_y + s * 0.10,
+        cx,
+        tip_y,
+    )
+    p.fillPath(highlight, QColor(LICHEN + "55"))  # semi-transparent lichen
+
+    # Centre vein
+    pen = p.pen()
+    pen.setColor(QColor(MOSS_DARK))
+    pen.setWidthF(s * 0.04)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    vein = QPainterPath()
+    vein.moveTo(cx, tip_y + s * 0.04)
+    vein.lineTo(cx, base_y - s * 0.04)
+    p.drawPath(vein)
+
+    # Side veins (3 pairs)
+    pen.setWidthF(s * 0.025)
+    p.setPen(pen)
+    offsets = [0.28, 0.48, 0.65]  # fractional positions along the centre vein
+    spread = s * 0.26
+    for frac in offsets:
+        vy = tip_y + (base_y - tip_y) * frac
+        # right vein
+        rv = QPainterPath()
+        rv.moveTo(cx, vy)
+        rv.quadTo(cx + spread * 0.6, vy - s * 0.04, cx + spread, vy - s * 0.06)
+        p.drawPath(rv)
+        # left vein
+        lv = QPainterPath()
+        lv.moveTo(cx, vy)
+        lv.quadTo(cx - spread * 0.6, vy - s * 0.04, cx - spread, vy - s * 0.06)
+        p.drawPath(lv)
+
+    p.end()
+    return QIcon(px)
+
+
+class Header(QWidget):
     """Decorative header panel with hand-drawn-style vine SVG paths rendered via QPainter."""
 
     def __init__(self, parent=None):
@@ -96,7 +200,7 @@ class BotanicalHeader(QWidget):
         p.end()
 
 
-# ─── LRU Playback Cache (unchanged logic) ───────────────────────────────────
+# LRU Playback Cache (unchanged logic)
 class PlaybackLRUCache:
     def __init__(self, max_size: int = 20):
         self._max_size = max_size
@@ -388,7 +492,8 @@ class AudioBrowserApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("🌿  Audio Browser")
+        self.setWindowTitle("Audio Browser")
+        self.setWindowIcon(make_leaf_icon(64))
         self.resize(620, 580)
         self.setMinimumSize(400, 340)
 
@@ -412,7 +517,7 @@ class AudioBrowserApp(QMainWindow):
         root_layout.setSpacing(0)
 
         # Decorative header
-        header = BotanicalHeader()
+        header = Header()
         root_layout.addWidget(header)
 
         # Title label over header (layered via absolute positioning inside header)
@@ -557,6 +662,7 @@ if __name__ == "__main__":
     palette.setColor(QPalette.ColorRole.Highlight, QColor(FERN_GREEN))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(CREAM))
     app.setPalette(palette)
+    app.setWindowIcon(make_leaf_icon(64))  # taskbar + alt-tab thumbnail
 
     window = AudioBrowserApp()
     window.show()
