@@ -1,3 +1,4 @@
+import json
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -54,6 +55,13 @@ from styles import (
     tree_stylesheet,
     window_stylesheet,
 )
+
+
+def get_config_dir() -> Path:
+    """Config directory: script dir when run as .py, exe dir when frozen."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent
 
 
 def _is_vlc_format(path: str) -> bool:
@@ -367,11 +375,22 @@ class AudioBrowserApp(QMainWindow):
 
         self._cache = PlaybackLRUCache(max_size=self.CACHE_SIZE)
 
-        # Audio directories — starts with ./audio, user can add more
+        # Audio directories — load saved + default ./audio, user can add more
+        self._config_file = get_config_dir() / "sound_path.json"
         self._audio_dirs: list[Path] = []
-        default_dir = Path("./audio")
+
+        # 1. Restore previously saved folders
+        saved_paths = self._load_saved_paths()
+        for saved in saved_paths:
+            resolved = saved.resolve()
+            if not any(d.resolve() == resolved for d in self._audio_dirs):
+                self._audio_dirs.append(resolved)
+
+        # 2. Always include ./audio (relative to cwd) if it exists
+        default_dir = Path("./audio").resolve()
         if default_dir.exists() and default_dir.is_dir():
-            self._audio_dirs.append(default_dir)
+            if not any(d.resolve() == default_dir for d in self._audio_dirs):
+                self._audio_dirs.append(default_dir)
 
         # Layout
         central_widget = QWidget()
@@ -505,7 +524,34 @@ class AudioBrowserApp(QMainWindow):
                 return  # already in the list
 
         self._audio_dirs.append(folder_path)
+        self._save_audio_dirs()
         self._populate_tree()
+
+    # Persistence
+    def _load_saved_paths(self) -> list[Path]:
+        """Read absolute folder paths from sound_path.json (one per line)."""
+        try:
+            if not self._config_file.exists():
+                return []
+            data = json.loads(self._config_file.read_text(encoding="utf-8"))
+            if not isinstance(data, list):
+                return []
+            return [Path(p) for p in data if isinstance(p, str) and Path(p).is_dir()]
+        except Exception:
+            return []
+
+    def _save_audio_dirs(self) -> None:
+        """Persist added folder paths (excluding ./audio) to sound_path.json."""
+        cwd_resolved = Path("./audio").resolve()
+        # Only save paths added via the dialog (not the default ./audio)
+        to_save = [str(d) for d in self._audio_dirs if d.resolve() != cwd_resolved]
+        try:
+            self._config_file.write_text(
+                json.dumps(to_save, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     # Playback
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):
