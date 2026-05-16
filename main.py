@@ -37,11 +37,9 @@ from PyQt6.QtWidgets import (
 
 from styles import (
     BARK,
-    CREAM,
     FERN_GREEN,
     GOLD_SPORE,
     LICHEN,
-    MOSS_DARK,
     MOSS_LEAF,
     MOSS_MID,
     PARCHMENT,
@@ -105,7 +103,7 @@ class Header(QWidget):
         p.end()
 
 
-# LRU Playback Cache (unchanged logic)
+# LRU Playback Cache
 class PlaybackLRUCache:
     def __init__(self, max_size: int = 20):
         self._max_size = max_size
@@ -134,7 +132,7 @@ class PlaybackLRUCache:
         return path in self._cache
 
 
-# Background loader thread (unchanged logic)
+# Background loader thread
 class PlaybackLoader(QObject):
     finished = pyqtSignal(str, object)
 
@@ -150,7 +148,7 @@ class PlaybackLoader(QObject):
         self.finished.emit(self._path, pb)
 
 
-# Draggable TreeWidget (unchanged logic, botanical stylesheet)
+# Draggable TreeWidget
 class DraggableTreeWidget(QTreeWidget):
     LONG_PRESS_MS = 500
     DRAG_THRESHOLD = 8
@@ -241,7 +239,7 @@ class DraggableTreeWidget(QTreeWidget):
         self._press_pos = None
         super().mouseReleaseEvent(event)
 
-    # Hover debounce (logic unchanged)
+    # Hover debounce
     def _on_hover_settled(self):
         path = self._pending_path
         if path and path != self._prefetched_path:
@@ -273,12 +271,12 @@ class DraggableTreeWidget(QTreeWidget):
         if pb is not None:
             self._cache.put(path, pb)
 
-    # Drag (logic unchanged)
+    # Drag
     def _on_long_press(self):
         if self._press_item is not None and not self._drag_started:
             self._start_drag(self._press_item)
 
-    # ── Context menu ─────────────────────────────────────────────────────
+    # Context menu
     def _on_context_menu(self, pos: QPoint):
         """Right-click on empty tree area → 'Add Audio Folder...'"""
         if self.itemAt(pos) is not None:
@@ -394,7 +392,7 @@ class AudioBrowserApp(QMainWindow):
         self.tree.add_folder_requested.connect(self._on_add_folder)
         self._current_playback: Playback | None = None
 
-    # ── Tree population ───────────────────────────────────────────────────
+    # Tree population
     def _populate_tree(self):
         """Rebuild the tree from self._audio_dirs."""
         self.tree.clear()
@@ -462,7 +460,7 @@ class AudioBrowserApp(QMainWindow):
         leaf.setData(0, Qt.ItemDataRole.UserRole + 1, str(file_path))
         leaf.setForeground(0, QColor(PARCHMENT))
 
-    # ── Add folder via file dialog ────────────────────────────────────────
+    # Add folder via file dialog
     def _on_add_folder(self):
         """Open a folder picker, then add the chosen directory to the tree."""
         chosen = QFileDialog.getExistingDirectory(
@@ -481,7 +479,7 @@ class AudioBrowserApp(QMainWindow):
         self._audio_dirs.append(folder_path)
         self._populate_tree()
 
-    # ── Playback (logic unchanged) ────────────────────────────────────────────
+    # Playback
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):
         path: str | None = item.data(0, Qt.ItemDataRole.UserRole + 1)
         if not path:
@@ -508,7 +506,6 @@ class AudioBrowserApp(QMainWindow):
         self._status.set_track(Path(path).name)
 
 
-# Entry point
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
