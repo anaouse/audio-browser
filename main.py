@@ -192,6 +192,7 @@ class DraggableTreeWidget(QTreeWidget):
         self._loading: set[str] = set()
         self._threads: list[QThread] = []
 
+        # drag
         self._press_pos: QPoint | None = None
         self._press_item: QTreeWidgetItem | None = None
         self._long_press_timer = QTimer(self)
@@ -199,6 +200,7 @@ class DraggableTreeWidget(QTreeWidget):
         self._long_press_timer.timeout.connect(self._on_long_press)
         self._drag_started = False
 
+        # preload
         self.setMouseTracking(True)
         self._hover_debounce = QTimer(self)
         self._hover_debounce.setSingleShot(True)
@@ -367,7 +369,7 @@ class AudioBrowserApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Audio Browser")
         self.setWindowIcon(make_leaf_icon(64))
-        self.resize(620, 580)
+        self.resize(600, 900)
         self.setMinimumSize(400, 340)
 
         # Global window style
@@ -557,6 +559,9 @@ class AudioBrowserApp(QMainWindow):
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):
         path: str | None = item.data(0, Qt.ItemDataRole.UserRole + 1)
         if not path:
+            # Folder item — toggle expand/collapse on single click
+            if item.childCount() > 0:
+                item.setExpanded(not item.isExpanded())
             return
 
         pb = self._cache.get(path)
