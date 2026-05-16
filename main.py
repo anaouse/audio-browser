@@ -461,6 +461,50 @@ class StatusLeaf(QFrame):
         self._icon.setText("🌿")
 
 
+# ================= 新增：隐形拉伸边缘捕获器 =================
+class ResizeGrip(QWidget):
+    """Invisible widget placed on the edges/corners of the window to handle resizing."""
+
+    def __init__(self, parent, edges):
+        super().__init__(parent)
+        self.edges = edges
+        self.setStyleSheet("background: transparent;")
+
+        # 自动根据停靠边缘设置光标形状
+        if edges == (Qt.Edge.TopEdge | Qt.Edge.LeftEdge) or edges == (
+            Qt.Edge.BottomEdge | Qt.Edge.RightEdge
+        ):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif edges == (Qt.Edge.TopEdge | Qt.Edge.RightEdge) or edges == (
+            Qt.Edge.BottomEdge | Qt.Edge.LeftEdge
+        ):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        else:
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+
+        self._drag_start_pos = None
+        self._drag_start_geometry = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            window = self.window().windowHandle()
+            # 优先调用 Qt 原生的系统级无边框拉伸系统 (支持原生的 Aero Snap 等特效)
+            if window and window.startSystemResize(self.edges):
+                event.accept()
+                return
+
+            # 系统不支持原生接口时的纯计算降级兼容方案
+            self._drag_start_pos = event.globalPosition().toPoint()
+            self._drag_start_geometry = self.window().geometry()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_start_pos = None
+        event.accept()
+
+
 # Main window
 class AudioBrowserApp(QMainWindow):
     CACHE_SIZE = 20
@@ -537,6 +581,53 @@ class AudioBrowserApp(QMainWindow):
         self.tree.add_folder_requested.connect(self._on_add_folder)
         self.tree.remove_folder_requested.connect(self._on_remove_folder)
         self._current_playback: Playback | VlcPlayback | None = None
+
+        # ================= 创建隐形的 8 个拖动条 =================
+        self._grips = []
+        for edges in [
+            Qt.Edge.LeftEdge,
+            Qt.Edge.RightEdge,
+            Qt.Edge.TopEdge,
+            Qt.Edge.BottomEdge,
+            Qt.Edge.TopEdge | Qt.Edge.LeftEdge,
+            Qt.Edge.TopEdge | Qt.Edge.RightEdge,
+            Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,
+            Qt.Edge.BottomEdge | Qt.Edge.RightEdge,
+        ]:
+            grip = ResizeGrip(self, edges)
+            self._grips.append(grip)
+
+    # ================= 确保拖动条永远贴在最外侧 =================
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_grips()
+
+    def _update_grips(self):
+        w = self.width()
+        h = self.height()
+        t = 5  # 感应区厚度：5像素
+
+        for grip in self._grips:
+            edges = grip.edges
+            if edges == Qt.Edge.TopEdge:
+                grip.setGeometry(t, 0, w - 2 * t, t)
+            elif edges == Qt.Edge.BottomEdge:
+                grip.setGeometry(t, h - t, w - 2 * t, t)
+            elif edges == Qt.Edge.LeftEdge:
+                grip.setGeometry(0, t, t, h - 2 * t)
+            elif edges == Qt.Edge.RightEdge:
+                grip.setGeometry(w - t, t, t, h - 2 * t)
+            elif edges == (Qt.Edge.TopEdge | Qt.Edge.LeftEdge):
+                grip.setGeometry(0, 0, t, t)
+            elif edges == (Qt.Edge.TopEdge | Qt.Edge.RightEdge):
+                grip.setGeometry(w - t, 0, t, t)
+            elif edges == (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge):
+                grip.setGeometry(0, h - t, t, t)
+            elif edges == (Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+                grip.setGeometry(w - t, h - t, t, t)
+
+            # 强制这些透明控件悬浮于所有界面元素之上
+            grip.raise_()
 
     # Tree population
     def _populate_tree(self):
