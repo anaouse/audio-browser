@@ -13,9 +13,20 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QDrag
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QDrag,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPalette,
+)
 from PyQt6.QtWidgets import (
     QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QTreeWidget,
     QTreeWidgetItem,
@@ -23,14 +34,70 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+# ─── Palette ────────────────────────────────────────────────────────────────
+MOSS_DARK = "#1C2416"  # deepest forest floor
+MOSS_MID = "#2D3B22"  # window / panel background
+MOSS_LEAF = "#3E5430"  # header / sidebar
+FERN_GREEN = "#5A7A3A"  # accent / hover
+LICHEN = "#8FAF6A"  # bright accent, highlighted text
+CREAM = "#EDE8D5"  # primary text
+PARCHMENT = "#C8BFA0"  # secondary text
+GOLD_SPORE = "#B89A4A"  # folder colour
+BARK = "#6B5B3E"  # subtle separator
+DEWDROP = "#A8C8A0"  # currently playing tint
 
-# LRU Playback Cache
+
+# ─── Leaf / vine decoration widget ──────────────────────────────────────────
+class BotanicalHeader(QWidget):
+    """Decorative header panel with hand-drawn-style vine SVG paths rendered via QPainter."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(72)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Background gradient
+        grad = QLinearGradient(0, 0, self.width(), self.height())
+        grad.setColorAt(0.0, QColor(MOSS_LEAF))
+        grad.setColorAt(1.0, QColor(MOSS_MID))
+        p.fillRect(self.rect(), QBrush(grad))
+
+        # Decorative bottom border
+        p.setPen(QColor(FERN_GREEN))
+        p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
+
+        # Draw vine-like bezier curves
+        p.setPen(QColor(FERN_GREEN))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+        vine = QPainterPath()
+        vine.moveTo(0, 48)
+        vine.cubicTo(60, 20, 120, 68, 200, 38)
+        vine.cubicTo(280, 8, 340, 55, 420, 30)
+        vine.cubicTo(500, 5, 560, 50, self.width(), 28)
+        p.drawPath(vine)
+
+        # Small leaf dots along vine
+        leaf_positions = [40, 120, 200, 300, 400, 500]
+        p.setBrush(QColor(LICHEN))
+        p.setPen(Qt.PenStyle.NoPen)
+        for x in leaf_positions:
+            if x < self.width():
+                # Tiny ellipse "leaf"
+                p.save()
+                p.translate(x, 35)
+                p.rotate(30)
+                p.drawEllipse(-5, -2, 10, 5)
+                p.restore()
+
+        p.end()
+
+
+# ─── LRU Playback Cache (unchanged logic) ───────────────────────────────────
 class PlaybackLRUCache:
-    """
-    LRU cache: file_path -> Playback, capped at max_size.
-    Evicted entries are stopped automatically to free resources.
-    """
-
     def __init__(self, max_size: int = 20):
         self._max_size = max_size
         self._cache: OrderedDict[str, Playback] = OrderedDict()
@@ -58,11 +125,9 @@ class PlaybackLRUCache:
         return path in self._cache
 
 
-# Background loader thread
+# ─── Background loader thread (unchanged logic) ─────────────────────────────
 class PlaybackLoader(QObject):
-    """Instantiates Playback on a worker thread, emits finished when done."""
-
-    finished = pyqtSignal(str, object)  # (file_path, Playback | None)
+    finished = pyqtSignal(str, object)
 
     def __init__(self, path: str):
         super().__init__()
@@ -76,29 +141,18 @@ class PlaybackLoader(QObject):
         self.finished.emit(self._path, pb)
 
 
-# Draggable TreeWidget with mouse tracking, hover debounce, and prefetch
+# ─── Draggable TreeWidget (unchanged logic, botanical stylesheet) ─────────────
 class DraggableTreeWidget(QTreeWidget):
-    """
-    Mouse behaviour:
-    - setMouseTracking(True)  ->  mouseMoveEvent fires without button held
-    - Hover debounce (HOVER_DEBOUNCE_MS): only prefetch after the cursor has
-      rested on a node long enough.  Fast scrolling past nodes is ignored.
-    - Long-press (LONG_PRESS_MS) or drag distance >= DRAG_THRESHOLD -> file drag
-    - Short click -> itemClicked signal (playback handled by AudioBrowserApp)
-    """
-
     LONG_PRESS_MS = 500
     DRAG_THRESHOLD = 8
-    HOVER_DEBOUNCE_MS = 120  # ms the cursor must rest before prefetch fires
+    HOVER_DEBOUNCE_MS = 120
 
     def __init__(self, cache: PlaybackLRUCache, parent=None):
         super().__init__(parent)
         self._cache = cache
-
         self._loading: set[str] = set()
         self._threads: list[QThread] = []
 
-        # drag state
         self._press_pos: QPoint | None = None
         self._press_item: QTreeWidgetItem | None = None
         self._long_press_timer = QTimer(self)
@@ -106,21 +160,95 @@ class DraggableTreeWidget(QTreeWidget):
         self._long_press_timer.timeout.connect(self._on_long_press)
         self._drag_started = False
 
-        # hover / prefetch state
         self.setMouseTracking(True)
         self._hover_debounce = QTimer(self)
         self._hover_debounce.setSingleShot(True)
         self._hover_debounce.timeout.connect(self._on_hover_settled)
-        self._pending_path: str | None = None  # candidate waiting for debounce
-        self._prefetched_path: str | None = None  # last path actually prefetched
+        self._pending_path: str | None = None
+        self._prefetched_path: str | None = None
 
-    # Mouse events
+        self.setRootIsDecorated(False)  # removes Qt's branch arrow column entirely
+        self.setIndentation(16)  # keep visual indent without branch lines
+
+        self._apply_style()
+
+    def _apply_style(self):
+        self.setStyleSheet(f"""
+            QTreeWidget {{
+                background-color: {MOSS_MID};
+                color: {CREAM};
+                border: none;
+                outline: none;
+                padding: 6px 4px;
+                font-size: 13px;
+            }}
+
+            QTreeWidget::item {{
+                padding: 5px 8px;
+                border-radius: 6px;
+                margin: 1px 4px;
+                color: {PARCHMENT};
+            }}
+
+            QTreeWidget::item:hover {{
+                background-color: {MOSS_LEAF};
+                color: {CREAM};
+            }}
+
+            QTreeWidget::item:selected {{
+                background-color: {FERN_GREEN};
+                color: {CREAM};
+            }}
+
+            QTreeWidget::branch,
+            QTreeWidget::branch:hover,
+            QTreeWidget::branch:selected,
+            QTreeWidget::branch:has-siblings,
+            QTreeWidget::branch:!has-siblings,
+            QTreeWidget::branch:has-siblings:adjoins-item,
+            QTreeWidget::branch:has-siblings:!adjoins-item,
+            QTreeWidget::branch:!has-siblings:adjoins-item,
+            QTreeWidget::branch:!has-siblings:!adjoins-item,
+            QTreeWidget::branch:open:has-children,
+            QTreeWidget::branch:closed:has-children,
+            QTreeWidget::branch:open:has-children:has-siblings,
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                background-color: {MOSS_MID};
+                border-image: none;
+                image: none;
+            }}
+
+            QScrollBar:vertical {{
+                background: {MOSS_DARK};
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {FERN_GREEN};
+                border-radius: 4px;
+                min-height: 24px;
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar:horizontal {{
+                background: {MOSS_DARK};
+                height: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {FERN_GREEN};
+                border-radius: 4px;
+            }}
+        """)
+
+    # ── Mouse events (logic unchanged) ──────────────────────────────────────
     def mouseMoveEvent(self, event):
         if self._drag_started:
             super().mouseMoveEvent(event)
             return
 
-        # Hover debounce logic
         item = self.itemAt(event.pos())
         hovered_path: str | None = (
             item.data(0, Qt.ItemDataRole.UserRole + 1) if item else None
@@ -128,16 +256,12 @@ class DraggableTreeWidget(QTreeWidget):
 
         if hovered_path:
             if hovered_path != self._pending_path:
-                # Cursor moved to a different node: restart debounce timer
                 self._pending_path = hovered_path
                 self._hover_debounce.start(self.HOVER_DEBOUNCE_MS)
-            # else: same node, timer already running -> do nothing
         else:
-            # Cursor left all nodes: cancel pending prefetch
             self._hover_debounce.stop()
             self._pending_path = None
 
-        # Drag-distance detection while button is held
         if (
             self._press_item is not None
             and self._press_pos is not None
@@ -170,15 +294,13 @@ class DraggableTreeWidget(QTreeWidget):
         self._press_pos = None
         super().mouseReleaseEvent(event)
 
-    # Hover debounce callback
+    # ── Hover debounce (logic unchanged) ────────────────────────────────────
     def _on_hover_settled(self):
-        """Fires only after the cursor has rested on a node for HOVER_DEBOUNCE_MS."""
         path = self._pending_path
         if path and path != self._prefetched_path:
             self._prefetched_path = path
             self._prefetch(path)
 
-    # Async prefetch
     def _prefetch(self, path: str):
         if path in self._cache or path in self._loading:
             return
@@ -204,7 +326,7 @@ class DraggableTreeWidget(QTreeWidget):
         if pb is not None:
             self._cache.put(path, pb)
 
-    # Drag
+    # ── Drag (logic unchanged) ───────────────────────────────────────────────
     def _on_long_press(self):
         if self._press_item is not None and not self._drag_started:
             self._start_drag(self._press_item)
@@ -223,52 +345,144 @@ class DraggableTreeWidget(QTreeWidget):
         drag.exec(Qt.DropAction.CopyAction)
 
 
-# Main window
-class AudioBrowserApp(QMainWindow):
-    """
-    Audio file browser with:
-    - Zero-cost startup  (no Playback created at launch)
-    - Hover-debounced async prefetch into LRU cache
-    - Near-zero click latency (cache hit on click)
-    """
+# ─── Status bar widget ───────────────────────────────────────────────────────
+class StatusLeaf(QFrame):
+    """Slim footer showing currently playing file."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(32)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {MOSS_DARK};
+                border-top: 1px solid {BARK};
+            }}
+            QLabel {{
+                color: {LICHEN};
+                font-size: 11px;
+                padding: 0 12px;
+            }}
+        """)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+
+        self._icon = QLabel("🌿")
+        self._icon.setFixedWidth(20)
+        self._text = QLabel("No track playing")
+        layout.addWidget(self._icon)
+        layout.addWidget(self._text)
+        layout.addStretch()
+
+    def set_track(self, name: str):
+        self._text.setText(f"{name}")
+        self._icon.setText("🎵")
+
+    def clear_track(self):
+        self._text.setText("No track playing")
+        self._icon.setText("🌿")
+
+
+# ─── Main window ─────────────────────────────────────────────────────────────
+class AudioBrowserApp(QMainWindow):
     CACHE_SIZE = 20
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Audio File Browser")
-        self.resize(600, 500)
+        self.setWindowTitle("🌿  Audio Browser")
+        self.resize(620, 580)
+        self.setMinimumSize(400, 340)
+
+        # Global window style
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {MOSS_MID};
+            }}
+            QWidget {{
+                background-color: {MOSS_MID};
+            }}
+        """)
 
         self._cache = PlaybackLRUCache(max_size=self.CACHE_SIZE)
 
+        # ── Layout ────────────────────────────────────────────────────────
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        root_layout = QVBoxLayout(central_widget)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # Decorative header
+        header = BotanicalHeader()
+        root_layout.addWidget(header)
+
+        # Title label over header (layered via absolute positioning inside header)
+        title_label = QLabel("  Audio Browser", header)
+        title_label.setGeometry(16, 0, 300, header.height())
+        title_label.setStyleSheet(f"""
+            QLabel {{
+                color: {CREAM};
+                font-size: 18px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                background: transparent;
+            }}
+        """)
+        subtitle = QLabel("drag · drop · play", header)
+        subtitle.setGeometry(20, 36, 200, 24)
+        subtitle.setStyleSheet(f"""
+            QLabel {{
+                color: {LICHEN};
+                font-size: 10px;
+                letter-spacing: 3px;
+                background: transparent;
+            }}
+        """)
+
+        # Tree in a thin inset frame
+        tree_frame = QFrame()
+        tree_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {MOSS_MID};
+                border-left: 3px solid {MOSS_LEAF};
+                margin: 8px 10px 4px 10px;
+                border-radius: 4px;
+            }}
+        """)
+        tree_layout = QVBoxLayout(tree_frame)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
 
         self.tree = DraggableTreeWidget(cache=self._cache)
         self.tree.setHeaderHidden(True)
-        layout.addWidget(self.tree)
+        self.tree.setIndentation(20)
+        tree_layout.addWidget(self.tree)
+        root_layout.addWidget(tree_frame, stretch=1)
 
+        # Status footer
+        self._status = StatusLeaf()
+        root_layout.addWidget(self._status)
+
+        # ── Populate & connect ─────────────────────────────────────────────
         self._populate_tree()
         self.tree.itemClicked.connect(self._on_item_clicked)
-
         self._current_playback: Playback | None = None
 
+    # ── Tree population (logic unchanged, botanical colours) ─────────────────
     def _populate_tree(self):
         audio_dir = Path("./audio")
 
-        root_item = QTreeWidgetItem(self.tree, ["audio/"])
+        root_item = QTreeWidgetItem(self.tree, ["🌳  audio/"])
         font = root_item.font(0)
         font.setBold(True)
+        font.setPointSize(13)
         root_item.setFont(0, font)
-        root_item.setForeground(0, QColor("#D79921"))
+        root_item.setForeground(0, QColor(GOLD_SPORE))
 
         if not audio_dir.exists() or not audio_dir.is_dir():
-            error_item = QTreeWidgetItem(root_item, ["No ./audio directory found"])
-            font = error_item.font(0)
-            font.setItalic(True)
-            error_item.setFont(0, font)
-            error_item.setForeground(0, QColor("gray"))
+            error_item = QTreeWidgetItem(root_item, ["  No ./audio directory found"])
+            f = error_item.font(0)
+            f.setItalic(True)
+            error_item.setFont(0, f)
+            error_item.setForeground(0, QColor(BARK))
             root_item.setExpanded(True)
             return
 
@@ -280,11 +494,12 @@ class AudioBrowserApp(QMainWindow):
 
         for sub_dir in sorted(audio_dir.iterdir()):
             if sub_dir.is_dir():
-                sub_node = QTreeWidgetItem(root_item, [f"{sub_dir.name}/"])
+                sub_node = QTreeWidgetItem(root_item, [f"🌿  {sub_dir.name}/"])
                 font = sub_node.font(0)
                 font.setBold(True)
+                font.setPointSize(12)
                 sub_node.setFont(0, font)
-                sub_node.setForeground(0, QColor("#268BD2"))
+                sub_node.setForeground(0, QColor(LICHEN))
 
                 sub_files = sorted(
                     list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3"))
@@ -295,9 +510,11 @@ class AudioBrowserApp(QMainWindow):
         root_item.setExpanded(True)
 
     def _add_leaf(self, parent: QTreeWidgetItem, file_path: Path):
-        leaf = QTreeWidgetItem(parent, [f"♪ {file_path.name}"])
+        leaf = QTreeWidgetItem(parent, [f"   ♪  {file_path.name}"])
         leaf.setData(0, Qt.ItemDataRole.UserRole + 1, str(file_path))
+        leaf.setForeground(0, QColor(PARCHMENT))
 
+    # ── Playback (logic unchanged) ────────────────────────────────────────────
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):
         path: str | None = item.data(0, Qt.ItemDataRole.UserRole + 1)
         if not path:
@@ -305,7 +522,6 @@ class AudioBrowserApp(QMainWindow):
 
         pb = self._cache.get(path)
         if pb is None:
-            # Rare fallback: hover debounce hasn't fired yet
             try:
                 pb = Playback(path)
                 self._cache.put(path, pb)
@@ -321,10 +537,27 @@ class AudioBrowserApp(QMainWindow):
         self._current_playback = pb
         pb.play()
 
+        # Update status footer
+        self._status.set_track(Path(path).name)
 
-# Entry point
+
+# ─── Entry point ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Force dark palette so native widgets don't bleed light colours
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(MOSS_MID))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(CREAM))
+    palette.setColor(QPalette.ColorRole.Base, QColor(MOSS_DARK))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(MOSS_LEAF))
+    palette.setColor(QPalette.ColorRole.Text, QColor(CREAM))
+    palette.setColor(QPalette.ColorRole.Button, QColor(MOSS_LEAF))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(CREAM))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(FERN_GREEN))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(CREAM))
+    app.setPalette(palette)
+
     window = AudioBrowserApp()
     window.show()
     sys.exit(app.exec())
