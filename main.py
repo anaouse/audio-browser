@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -89,6 +90,80 @@ class Header(QWidget):
         super().__init__(parent)
         self.setFixedHeight(72)
 
+        self._drag_pos = None  # 用于记录拖拽起点位置
+
+        # 初始化自定义窗口控制按钮
+        self._init_buttons()
+
+    def _init_buttons(self):
+        self.min_btn = QPushButton("—", self)
+        self.close_btn = QPushButton("✕", self)
+
+        # 按钮样式：透明背景、悬停效果
+        base_style = """
+            QPushButton {
+                background-color: transparent;
+                color: #E8E8E8;
+                font-weight: bold;
+                font-size: 14px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 40);
+                border-radius: 4px;
+            }
+        """
+        close_style = (
+            base_style
+            + """
+            QPushButton:hover {
+                background-color: #D32F2F; /* 悬停变红 */
+                color: white;
+            }
+        """
+        )
+
+        self.min_btn.setStyleSheet(base_style)
+        self.close_btn.setStyleSheet(close_style)
+
+        # 绑定按钮功能，self.window() 指向最外层主窗口
+        self.min_btn.clicked.connect(lambda: self.window().showMinimized())
+        self.close_btn.clicked.connect(lambda: self.window().close())
+
+    def resizeEvent(self, event):
+        # 确保窗口调整大小时，按钮始终靠在右上角
+        super().resizeEvent(event)
+        btn_width, btn_height = 36, 32
+        self.min_btn.setGeometry(
+            self.width() - btn_width * 2 - 8, 8, btn_width, btn_height
+        )
+        self.close_btn.setGeometry(
+            self.width() - btn_width - 8, 8, btn_width, btn_height
+        )
+
+    # ================= 鼠标事件，用于实现拖动窗口 =================
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # 记录鼠标按下的全局位置 (PyQt6 推荐使用 globalPosition().toPoint())
+            self._drag_pos = event.globalPosition().toPoint()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            # 计算鼠标的偏移量
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            # 移动主窗口
+            self.window().move(self.window().pos() + delta)
+            # 更新起点
+            self._drag_pos = event.globalPosition().toPoint()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = None
+            event.accept()
+
+    # ================= 原有的绘制逻辑保持不变 =================
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -396,6 +471,8 @@ class AudioBrowserApp(QMainWindow):
         self.setWindowIcon(make_leaf_icon(64))
         self.resize(600, 900)
         self.setMinimumSize(400, 340)
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         # Global window style
         self.setStyleSheet(window_stylesheet())
