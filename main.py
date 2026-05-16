@@ -433,7 +433,10 @@ class AudioBrowserApp(QMainWindow):
                 continue
 
             root_files = sorted(
-                list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3"))
+                list(audio_dir.glob("*.wav"))
+                + list(audio_dir.glob("*.mp3"))
+                + list(audio_dir.glob("*.opus"))
+                + list(audio_dir.glob("*.m4a"))
             )
             for fp in root_files:
                 self._add_leaf(root_item, fp)
@@ -448,7 +451,10 @@ class AudioBrowserApp(QMainWindow):
                     sub_node.setForeground(0, QColor(LICHEN))
 
                     sub_files = sorted(
-                        list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3"))
+                        list(sub_dir.glob("*.wav"))
+                        + list(sub_dir.glob("*.mp3"))
+                        + list(sub_dir.glob("*.opus"))
+                        + list(sub_dir.glob("*.m4a"))
                     )
                     for fp in sub_files:
                         self._add_leaf(sub_node, fp)
