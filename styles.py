@@ -5,15 +5,15 @@ from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPixmap
 
 # ── Colour palette ──────────────────────────────────────────────────────────
 MOSS_DARK = "#1C2416"  # deepest forest floor
-MOSS_MID = "#2D3B22"   # window / panel background
+MOSS_MID = "#2D3B22"  # window / panel background
 MOSS_LEAF = "#3E5430"  # header / sidebar
 FERN_GREEN = "#5A7A3A"  # accent / hover
-LICHEN = "#8FAF6A"      # bright accent, highlighted text
-CREAM = "#EDE8D5"       # primary text
-PARCHMENT = "#C8BFA0"   # secondary text
+LICHEN = "#8FAF6A"  # bright accent, highlighted text
+CREAM = "#EDE8D5"  # primary text
+PARCHMENT = "#C8BFA0"  # secondary text
 GOLD_SPORE = "#B89A4A"  # folder colour
-BARK = "#6B5B3E"        # subtle separator
-DEWDROP = "#A8C8A0"     # currently playing tint
+BARK = "#6B5B3E"  # subtle separator
+DEWDROP = "#A8C8A0"  # currently playing tint
 
 
 # ── Procedural leaf icon ────────────────────────────────────────────────────
@@ -253,6 +253,24 @@ def tree_frame_stylesheet() -> str:
             border-left: 3px solid {MOSS_LEAF};
             margin: 8px 10px 4px 10px;
             border-radius: 4px;
+        }}
+    """
+
+
+def context_menu_stylesheet() -> str:
+    return f"""
+        QMenu {{
+            background-color: {MOSS_DARK};
+            color: {CREAM};
+            border: 1px solid {FERN_GREEN};
+            padding: 4px;
+        }}
+        QMenu::item {{
+            padding: 6px 24px;
+            border-radius: 4px;
+        }}
+        QMenu::item:selected {{
+            background-color: {FERN_GREEN};
         }}
     """
 

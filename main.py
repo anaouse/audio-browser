@@ -23,10 +23,12 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -35,12 +37,15 @@ from PyQt6.QtWidgets import (
 
 from styles import (
     BARK,
+    CREAM,
     FERN_GREEN,
     GOLD_SPORE,
     LICHEN,
+    MOSS_DARK,
     MOSS_LEAF,
     MOSS_MID,
     PARCHMENT,
+    context_menu_stylesheet,
     dark_palette,
     make_leaf_icon,
     status_stylesheet,
@@ -151,6 +156,8 @@ class DraggableTreeWidget(QTreeWidget):
     DRAG_THRESHOLD = 8
     HOVER_DEBOUNCE_MS = 120
 
+    add_folder_requested = pyqtSignal()
+
     def __init__(self, cache: PlaybackLRUCache, parent=None):
         super().__init__(parent)
         self._cache = cache
@@ -173,6 +180,10 @@ class DraggableTreeWidget(QTreeWidget):
 
         self.setRootIsDecorated(False)  # removes Qt's branch arrow column entirely
         self.setIndentation(16)  # keep visual indent without branch lines
+
+        # Right-click context menu on empty space
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
 
         self._apply_style()
 
@@ -267,6 +278,18 @@ class DraggableTreeWidget(QTreeWidget):
         if self._press_item is not None and not self._drag_started:
             self._start_drag(self._press_item)
 
+    # ── Context menu ─────────────────────────────────────────────────────
+    def _on_context_menu(self, pos: QPoint):
+        """Right-click on empty tree area → 'Add Audio Folder...'"""
+        if self.itemAt(pos) is not None:
+            return  # clicked on an item, no menu for now
+
+        menu = QMenu(self)
+        menu.setStyleSheet(context_menu_stylesheet())
+        action = menu.addAction("  📁  Add Audio Folder...")
+        action.triggered.connect(self.add_folder_requested.emit)
+        menu.exec(self.viewport().mapToGlobal(pos))
+
     def _start_drag(self, item: QTreeWidgetItem):
         file_path: str | None = item.data(0, Qt.ItemDataRole.UserRole + 1)
         if not file_path:
@@ -324,6 +347,12 @@ class AudioBrowserApp(QMainWindow):
 
         self._cache = PlaybackLRUCache(max_size=self.CACHE_SIZE)
 
+        # Audio directories — starts with ./audio, user can add more
+        self._audio_dirs: list[Path] = []
+        default_dir = Path("./audio")
+        if default_dir.exists() and default_dir.is_dir():
+            self._audio_dirs.append(default_dir)
+
         # Layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -362,55 +391,95 @@ class AudioBrowserApp(QMainWindow):
         # Populate & connect
         self._populate_tree()
         self.tree.itemClicked.connect(self._on_item_clicked)
+        self.tree.add_folder_requested.connect(self._on_add_folder)
         self._current_playback: Playback | None = None
 
-    # Tree population
+    # ── Tree population ───────────────────────────────────────────────────
     def _populate_tree(self):
-        audio_dir = Path("./audio")
+        """Rebuild the tree from self._audio_dirs."""
+        self.tree.clear()
 
-        root_item = QTreeWidgetItem(self.tree, ["🌳  audio/"])
-        font = root_item.font(0)
-        font.setBold(True)
-        font.setPointSize(13)
-        root_item.setFont(0, font)
-        root_item.setForeground(0, QColor(GOLD_SPORE))
+        if not self._audio_dirs:
+            root_item = QTreeWidgetItem(self.tree, ["🌳  No audio folders"])
+            f = root_item.font(0)
+            f.setBold(True)
+            f.setPointSize(13)
+            root_item.setFont(0, f)
+            root_item.setForeground(0, QColor(GOLD_SPORE))
 
-        if not audio_dir.exists() or not audio_dir.is_dir():
-            error_item = QTreeWidgetItem(root_item, ["  No ./audio directory found"])
-            f = error_item.font(0)
-            f.setItalic(True)
-            error_item.setFont(0, f)
-            error_item.setForeground(0, QColor(BARK))
+            hint = QTreeWidgetItem(
+                root_item, ["  Right-click empty space → Add Audio Folder"]
+            )
+            hint_f = hint.font(0)
+            hint_f.setItalic(True)
+            hint.setFont(0, hint_f)
+            hint.setForeground(0, QColor(BARK))
             root_item.setExpanded(True)
             return
 
-        root_files = sorted(
-            list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3"))
-        )
-        for fp in root_files:
-            self._add_leaf(root_item, fp)
+        for audio_dir in self._audio_dirs:
+            root_item = QTreeWidgetItem(self.tree, [f"🌳  {audio_dir.name}/"])
+            font = root_item.font(0)
+            font.setBold(True)
+            font.setPointSize(13)
+            root_item.setFont(0, font)
+            root_item.setForeground(0, QColor(GOLD_SPORE))
 
-        for sub_dir in sorted(audio_dir.iterdir()):
-            if sub_dir.is_dir():
-                sub_node = QTreeWidgetItem(root_item, [f"🌿  {sub_dir.name}/"])
-                font = sub_node.font(0)
-                font.setBold(True)
-                font.setPointSize(12)
-                sub_node.setFont(0, font)
-                sub_node.setForeground(0, QColor(LICHEN))
+            if not audio_dir.exists() or not audio_dir.is_dir():
+                error_item = QTreeWidgetItem(root_item, ["  Directory not found"])
+                f = error_item.font(0)
+                f.setItalic(True)
+                error_item.setFont(0, f)
+                error_item.setForeground(0, QColor(BARK))
+                root_item.setExpanded(True)
+                continue
 
-                sub_files = sorted(
-                    list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3"))
-                )
-                for fp in sub_files:
-                    self._add_leaf(sub_node, fp)
+            root_files = sorted(
+                list(audio_dir.glob("*.wav")) + list(audio_dir.glob("*.mp3"))
+            )
+            for fp in root_files:
+                self._add_leaf(root_item, fp)
 
-        root_item.setExpanded(True)
+            for sub_dir in sorted(audio_dir.iterdir()):
+                if sub_dir.is_dir():
+                    sub_node = QTreeWidgetItem(root_item, [f"🌿  {sub_dir.name}/"])
+                    font = sub_node.font(0)
+                    font.setBold(True)
+                    font.setPointSize(12)
+                    sub_node.setFont(0, font)
+                    sub_node.setForeground(0, QColor(LICHEN))
+
+                    sub_files = sorted(
+                        list(sub_dir.glob("*.wav")) + list(sub_dir.glob("*.mp3"))
+                    )
+                    for fp in sub_files:
+                        self._add_leaf(sub_node, fp)
+
+            root_item.setExpanded(True)
 
     def _add_leaf(self, parent: QTreeWidgetItem, file_path: Path):
         leaf = QTreeWidgetItem(parent, [f"   ♪  {file_path.name}"])
         leaf.setData(0, Qt.ItemDataRole.UserRole + 1, str(file_path))
         leaf.setForeground(0, QColor(PARCHMENT))
+
+    # ── Add folder via file dialog ────────────────────────────────────────
+    def _on_add_folder(self):
+        """Open a folder picker, then add the chosen directory to the tree."""
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Select Audio Folder", str(Path.home())
+        )
+        if not chosen:
+            return  # user cancelled
+
+        folder_path = Path(chosen).resolve()
+
+        # Avoid duplicates
+        for existing in self._audio_dirs:
+            if existing.resolve() == folder_path:
+                return  # already in the list
+
+        self._audio_dirs.append(folder_path)
+        self._populate_tree()
 
     # ── Playback (logic unchanged) ────────────────────────────────────────────
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):
