@@ -5,7 +5,7 @@ a = Analysis(
     ['D:\\projects\\audio-browser\\main.py'],
     pathex=[],
     binaries=[],
-    datas=[('audio', 'audio'), ('styles.py', '.'), ('sound_path.json', '.')],
+    datas=[],
     hiddenimports=['_cffi_backend', 'cffi'],
     hookspath=[],
     hooksconfig={},

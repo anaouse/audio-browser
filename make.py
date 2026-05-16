@@ -20,52 +20,10 @@ def run(cmd: list[str]):
     subprocess.check_call(cmd)
 
 
-def remove_old_build():
-    print("Cleaning old build files...")
-
-    if DIST_DIR.exists():
-        shutil.rmtree(DIST_DIR)
-
-    if BUILD_DIR.exists():
-        shutil.rmtree(BUILD_DIR)
-
-    if SPEC_FILE.exists():
-        SPEC_FILE.unlink()
-
-
-def ensure_pyinstaller():
-    try:
-        import PyInstaller  # noqa
-
-        print("PyInstaller already installed")
-    except ImportError:
-        print("Installing PyInstaller...")
-        run([sys.executable, "-m", "pip", "install", "pyinstaller"])
-
-
 def build():
     print("Building executable...")
 
-    datas = []
-
-    # audio folder
-    if (ROOT / "audio").exists():
-        datas.append("audio;audio")
-
-    # styles.py
-    if (ROOT / "styles.py").exists():
-        datas.append("styles.py;.")
-
-    # sound_path.json
-    if (ROOT / "sound_path.json").exists():
-        datas.append("sound_path.json;.")
-
     ICON_FILE = ROOT / "icon.ico"
-
-    data_args = []
-
-    for d in datas:
-        data_args += ["--add-data", d]
 
     cmd = [
         sys.executable,
@@ -81,7 +39,6 @@ def build():
         "--hidden-import=cffi",
         "--icon",
         str(ICON_FILE),
-        *data_args,
         str(MAIN_FILE),
     ]
 
@@ -92,6 +49,5 @@ def build():
 
 
 if __name__ == "__main__":
-    ensure_pyinstaller()
-    remove_old_build()
+    # remove_old_build()
     build()
