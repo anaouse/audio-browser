@@ -185,6 +185,7 @@ class DraggableTreeWidget(QTreeWidget):
     HOVER_DEBOUNCE_MS = 120
 
     add_folder_requested = pyqtSignal()
+    remove_folder_requested = pyqtSignal(str)
 
     def __init__(self, cache: PlaybackLRUCache, parent=None):
         super().__init__(parent)
@@ -308,11 +309,35 @@ class DraggableTreeWidget(QTreeWidget):
         if self._press_item is not None and not self._drag_started:
             self._start_drag(self._press_item)
 
+    # Keyboard shortcut: Ctrl+Q collapses the parent folder
+    def keyPressEvent(self, event):
+        if (
+            event.key() == Qt.Key.Key_Q
+            and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+        ):
+            current = self.currentItem()
+            if current is not None:
+                parent = current.parent()
+                if parent is not None:
+                    parent.setExpanded(False)
+            return
+        super().keyPressEvent(event)
+
     # Context menu
     def _on_context_menu(self, pos: QPoint):
-        """Right-click on empty tree area → 'Add Audio Folder...'"""
-        if self.itemAt(pos) is not None:
-            return  # clicked on an item, no menu for now
+        """Right-click: root dir → remove; empty space → add folder."""
+        item = self.itemAt(pos)
+        if item is not None:
+            folder_path = item.data(0, Qt.ItemDataRole.UserRole + 2)
+            if folder_path is not None:
+                menu = QMenu(self)
+                menu.setStyleSheet(context_menu_stylesheet())
+                action = menu.addAction("  ❌  Remove Folder")
+                action.triggered.connect(
+                    lambda: self.remove_folder_requested.emit(folder_path)
+                )
+                menu.exec(self.viewport().mapToGlobal(pos))
+            return
 
         menu = QMenu(self)
         menu.setStyleSheet(context_menu_stylesheet())
@@ -433,6 +458,7 @@ class AudioBrowserApp(QMainWindow):
         self._populate_tree()
         self.tree.itemClicked.connect(self._on_item_clicked)
         self.tree.add_folder_requested.connect(self._on_add_folder)
+        self.tree.remove_folder_requested.connect(self._on_remove_folder)
         self._current_playback: Playback | VlcPlayback | None = None
 
     # Tree population
@@ -460,6 +486,7 @@ class AudioBrowserApp(QMainWindow):
 
         for audio_dir in self._audio_dirs:
             root_item = QTreeWidgetItem(self.tree, [f"🌳  {audio_dir.name}/"])
+            root_item.setData(0, Qt.ItemDataRole.UserRole + 2, str(audio_dir))
             font = root_item.font(0)
             font.setBold(True)
             font.setPointSize(13)
@@ -554,6 +581,14 @@ class AudioBrowserApp(QMainWindow):
             )
         except Exception:
             pass
+
+    # Remove folder
+    def _on_remove_folder(self, folder_path: str):
+        """Remove a root directory from the tree and persist the change."""
+        target = Path(folder_path).resolve()
+        self._audio_dirs = [d for d in self._audio_dirs if d.resolve() != target]
+        self._save_audio_dirs()
+        self._populate_tree()
 
     # Playback
     def _on_item_clicked(self, item: QTreeWidgetItem, _column: int):

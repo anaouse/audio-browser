@@ -13,3 +13,4 @@ audio/
 *.obj
 nul
 dev
+sound_path.json
