@@ -168,7 +168,7 @@ def tree_stylesheet() -> str:
         }}
 
         QScrollBar:vertical {{
-            background: {MOSS_DARK};
+            background: {MOSS_MID};
             width: 8px;
             border-radius: 4px;
         }}
@@ -177,18 +177,26 @@ def tree_stylesheet() -> str:
             border-radius: 4px;
             min-height: 24px;
         }}
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical {{
             height: 0px;
         }}
         QScrollBar:horizontal {{
-            background: {MOSS_DARK};
+            background: {MOSS_MID};
             height: 8px;
             border-radius: 4px;
         }}
         QScrollBar::handle:horizontal {{
             background: {FERN_GREEN};
             border-radius: 4px;
+        }}
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal {{
+            background: none;
         }}
     """
 

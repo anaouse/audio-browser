@@ -697,7 +697,7 @@ class AudioBrowserApp(QMainWindow):
                     for fp in sub_files:
                         self._add_leaf(sub_node, fp)
 
-            root_item.setExpanded(True)
+            root_item.setExpanded(False)
 
     def _add_leaf(self, parent: QTreeWidgetItem, file_path: Path):
         leaf = QTreeWidgetItem(parent, [f"   ♪  {file_path.name}"])
